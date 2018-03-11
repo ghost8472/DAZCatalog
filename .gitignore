@@ -1,0 +1,5 @@
+cache*
+prods
+_binaries
+tmp
+config.php
