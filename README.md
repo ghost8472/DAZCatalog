@@ -81,7 +81,9 @@ You can modify these via config.php if you want to add/subtract items from this 
 
 
 ## Bookmarks
-Useful browser bookmarks, originally based on a forum post (sorry, I lost the link), and then modified.
+Useful browser bookmarks, originally based on a forum post, and then modified.
+* original forum post: https://www.daz3d.com/forums/discussion/57267/wishlist-filter-s-on-product-search#latest
+* which takes you to: http://3dwishlist.com/bookmarklet
 
 To use these, paste their code into the "URL" part of your browser's bookmarks.  Try creating a bookmark first, then edit it, and replace the URL with this code.
 
