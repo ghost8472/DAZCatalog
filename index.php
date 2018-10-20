@@ -194,7 +194,7 @@ function SanitizeBigText($txt) {
 $total = []; $tagindex = []; $wordindex = [];
 if (file_exists("cache.php")) { include("cache.php"); }
 if (empty($total) || $showloader || $makechange) {
-	$maxatonce = 200;
+	$maxatonce = 40;
 	$remaining = [];
 	$imgremain = []; $imgerrors = [];
 	$storeremaining = []; $storeerrors = [];
@@ -315,7 +315,7 @@ if (empty($total) || $showloader || $makechange) {
 			foreach($autotags as $atag) {
 				if (isset($obj['tags'][$atag])) { continue; } //already known/saved
 				$obj['tagcount'] = count($obj['tags']);
-				file_put_contents("prods/{$prodid}/tags.txt",implode(" ",$obj['tags']));
+				file_put_contents("prods/{$prodid}/tags.txt"," ".implode(" ",$obj['tags'])." ");
 				error_log("INFO: autotags updated {$prodid}: {$atag}");
 				if (!isset($tagindex[$tag])) { $tagindex[$tag] = []; }
 				$tagindex[$tag][$prodid] = $prodid;
@@ -385,10 +385,15 @@ if (empty($total) || $showloader || $makechange) {
 			//$obj['wordindex'] = $windex; //no need to save it, since we'll have the main index
 			$obj['wordindex_mtime'] = time();
 			
+			/*/ disable the global index: 
 			foreach($windex as $word=>$count) {
 				if (!isset($wordindex[$word])) { $wordindex[$word] = []; }
 				$wordindex[$word][$prodid] = $count;
 			}
+			/**/
+			
+			//greppable file
+			file_put_contents("prods/{$prodid}/words.txt"," ".implode(" ",array_keys($windex))." ");
 		}
 		
 		$total[$prodid] = $obj;
@@ -424,6 +429,7 @@ if (!empty($tag_override)) {
 		}
 	}
 }
+unset($tagindex[""]);
 
 if (empty($total)) {
 	$showloader = true;
@@ -518,7 +524,7 @@ $filters = [];
 $filters['editors'] = ReqSes('filters_editors',array_merge(array_keys($editors),[$NONEELEM]));
 $filters['installers'] = ReqSes('filters_installers',array_merge(array_keys($installmethods),[$NONEELEM]));
 
-function indexproc($words,$index) {
+function searchproc($words,$indexOrFilename) {
 	global $total;
 	
 	$hits = [];
@@ -537,7 +543,26 @@ function indexproc($words,$index) {
 			foreach($total as $prodid=>$obj) { $hits[$prodid] = $score; }
 		}
 		
-		$keys = isset($index[$word])?$index[$word]:[];
+		$keys = [];
+		if (is_array($indexOrFilename)) { //index
+			$keys = isset($indexOrFilename[$word])?$indexOrFilename[$word]:[];
+		} else { //filename
+			$cmd = "grep -iFrc --include={$indexOrFilename} ".escapeshellarg(" $word ")." prods/";
+			$searchhandle = popen($cmd,"r");
+			$filehits = "";
+			while (!feof($searchhandle)) { 
+				$filehits .= fgets($searchhandle, 4096); 
+			}
+			pclose($searchhandle);
+			
+			foreach(explode("\n",$filehits) as $file) {
+				$ok = preg_match("/prods\/(?P<prod>\d+)\/.*:(?P<count>\d+)/",$file,$match);
+				if ($ok) {
+					if ($match['count'] == 0) { continue; }
+					$keys[$match['prod']] = intval($match['count']);
+				}
+			}
+		}
 		if ($action == "OR") foreach($keys as $key=>$count) {
 			if (!isset($hits[$key])) { $hits[$key] = 0; }
 			$hits[$key] += $score;
@@ -555,11 +580,12 @@ function indexproc($words,$index) {
 	return $hits;
 }
 
+
 $newsearch = (isset($_REQUEST['newsearch'])?$_REQUEST['newsearch']:(isset($_SESSION['searchids'])?0:1));
 if ($newsearch) {
 	
-	$wfinder = indexproc($index_words,$wordindex);
-	$tfinder = indexproc($index_tags,$tagindex);
+	$wfinder = searchproc($index_words,'words.txt');
+	$tfinder = searchproc($index_tags,$tagindex);
 	
 	$regex = "/{$search}/i";
 	$maxtags = count($tagindex);
@@ -691,7 +717,7 @@ Then copy the results, and paste them here &rarr;
 </form>
 
 Total Products: <?=count($total)?><br/>
-Total Words: <?=count($wordindex)?><br/>
+Total Words: <?=count($wordindex)?> (disabled)<br/>
 Total Tags: <?=count($tagindex)?><br/>
 
 
