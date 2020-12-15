@@ -2,7 +2,11 @@
 /*
 DAZ 3D cataloging
 
-Copyright (c) 2018 William Baker, Ether Tear LLC
+Copyright (c) 2018-2020 William Baker, Ether Tear LLC
+*/
+
+/*
+for file in $(grep -rl "\\\\n" --include=desc.html prods/); do rm $file; done
 */
 
 $errstrlen = 32;
@@ -50,7 +54,7 @@ $allowautorefresh = false;
 $makechange = false;
 $recachetag = "";
 
-$imgurl_regex = "/src=['\"](?P<url>.*?\.jpg)['\"]/im";
+$imgurl_regex = "/src=['\"\\\\]+(?P<url>.*?\.jpg)['\"\\\\]+/im";
 
 if (!file_exists("prods")) { mkdir("prods"); }
 
@@ -94,10 +98,12 @@ if (isset($_REQUEST['serve']) && isset($_REQUEST['prodid'])) {
 if (isset($_REQUEST['servetags'])) {
 	$prodid = intval($_REQUEST['servetags']);
 	$fname = "prods/{$prodid}/tags.txt";
+	$fieldname = "tags".rand(1000000,9999999);
 	$tagsafe = SafeHTML( file_exists($fname)?SafeFile($fname):"" );
 ?><form method='GET' action='<?=basename(__FILE__)?>' >
 	<input type='submit' value='Update' />
-	<input type='text' id='tagtext' name='tags' value='<?=$tagsafe?>' style='width:70%;' />
+	<input type='text' id='tagtext' name='<?=$fieldname?>' value='<?=$tagsafe?>' style='width:70%;' />
+	<input type='hidden' name='tagsfield' value='<?=$fieldname?>' />
 	<input type='hidden' name='prodid' value='<?=$_REQUEST['servetags']?>' />
 	<input type='submit' value='Update' />
 </form>
@@ -115,7 +121,8 @@ if (isset($_REQUEST['servetags'])) {
 
 $tag_override = [];
 if (file_exists("cache_tagsoverride.php")) { include("cache_tagsoverride.php"); }
-if (isset($_REQUEST['tags']) && isset($_REQUEST['prodid'])) {
+if (isset($_REQUEST['tagsfield']) && isset($_REQUEST['prodid'])) {
+	$_REQUEST['tags'] = $_REQUEST[$_REQUEST['tagsfield']];
 	$prodid = intval($_REQUEST['prodid']);
 	$fname = "prods/".intval($prodid)."/tags.txt";
 	file_put_contents($fname,strtolower($_REQUEST['tags']));
@@ -153,7 +160,27 @@ foreach($owned as $prodid) {
 }
 
 if (isset($_REQUEST['desc'])) {
-	$descobj = json_decode($_REQUEST['desc'],true);
+	try{
+		$descobj = json_decode($_REQUEST['desc'],true);
+		if (!is_array($descobj)) { //something went wrong with JSON decode
+			error_log("ERROR processing JSON, reverting to exploding string");
+			$rawlines = explode('","',trim($_REQUEST['desc'],"{}"));
+			$descobj = [];
+			foreach($rawlines as $rawline) {
+				list($rawprod,$rawdesc) = explode('":"',$rawline);
+				$prodid = trim($rawprod,'"');
+				$desc = stripslashes(
+					str_replace(["\\n","\\r","\\t","\\\""],["\n","\r","\t","\""],
+						trim($rawdesc,'"')
+					)
+				);
+				$descobj[$prodid] = $desc;
+			}
+		}
+	} catch (Exception $e) {
+		error_log("Errors in dealing with the JSON object");
+		$descobj = [];
+	}
 	foreach($descobj as $prodid_padded=>$desc) {
 		$prodid = substr($prodid_padded,1);
 		file_put_contents("prods/{$prodid}/desc.html",$desc);
@@ -164,6 +191,9 @@ if (isset($_REQUEST['desc'])) {
 
 if (isset($_REQUEST['nukecache'])) {
 	//unlink("cache.php");
+	exec('for file in $(grep -rl "\\\\\\\\n" --include=desc.html prods/); do rm $file; done');
+	exec('rm prods/*/noimg');
+	exec('rm prods/*/nostore');
 	file_put_contents("cache.php",""); //so that permissions can survive the nuke
 	//$makechange = true;
 	//$quickrefresh = true;
@@ -314,11 +344,12 @@ if (empty($total) || $showloader || $makechange) {
 		if ($autotags) {
 			foreach($autotags as $atag) {
 				if (isset($obj['tags'][$atag])) { continue; } //already known/saved
+				$obj['tags'][$atag] = $atag;
 				$obj['tagcount'] = count($obj['tags']);
 				file_put_contents("prods/{$prodid}/tags.txt"," ".implode(" ",$obj['tags'])." ");
 				error_log("INFO: autotags updated {$prodid}: {$atag}");
-				if (!isset($tagindex[$tag])) { $tagindex[$tag] = []; }
-				$tagindex[$tag][$prodid] = $prodid;
+				if (!isset($tagindex[$atag])) { $tagindex[$atag] = []; }
+				$tagindex[$atag][$prodid] = $prodid;
 			}
 		}
 
@@ -741,17 +772,25 @@ dzc.run = function() {
 			document.body.appendChild(textarea);
 			textarea.select();
 			document.execCommand('copy');
-			console.log("copied to clipboard");
+			// console.log("copied to clipboard");
 		} catch (err) {
 			console.log("unable to copy to clipboard");
 		}
 		return false;
 	}
 	var prodid = dzc.remaining.pop();
-	$.getJSON("https://www.daz3d.com/downloader/customer/ajaxfiles/prod/"+prodid,{},function(data){
-		if (data[0] != "OK") { return; }
-		dzc.desc["p"+prodid] = data[1];
-		setTimeout(dzc.run,100);
+	$.ajax({
+		dataType: "json"
+		,url: "https://www.daz3d.com/downloader/customer/ajaxfiles/prod/"+prodid
+		,data: {}
+		,success: function(data){
+			setTimeout(dzc.run,100);
+			if (data[0] != "OK") {	return;	}
+			dzc.desc["p"+prodid] = data[1];
+		}
+		,error: function(jqXHR, textStatus, errorThrown ) {
+			setTimeout(dzc.run,100);
+		}
 	});
 	return "Please wait for process to complete, or run dzc.stop() to quit early";
 }; //end dzc.run()
@@ -797,8 +836,7 @@ foreach($imgremain as $prodid) {
 	if (file_exists($noimg)) { continue; }
 
 	if (!isset($total[$prodid]['imgurl'])) { touch($noimg); echo "Error finding preview image filename for {$prodid}<br/>\n"; continue; }
-	
-	copy($total[$prodid]['imgurl'],$iname);
+	if ($total[$prodid]['imgurl']) { copy($total[$prodid]['imgurl'],$iname); }
 	if (!file_exists($iname)) { touch($noimg); echo "Error copying preview image for {$prodid}<br/>\n"; continue; }
 	if (filesize($iname) < $errstrlen) { echo "Error, incomplete preview image for {$prodid}<br/>\n"; continue; }
 	
@@ -824,10 +862,10 @@ foreach($storeremaining as $prodid) {
 	if (file_exists($nostr)) { continue; }
 
 	$desc = SafeFile($fname);
-	$ok = preg_match("/href=['\"](?P<url>.*?)['\"].*?\>View Product Store Page/im",$desc,$matches);
+	$ok = preg_match("/href=['\"](?P<url>.*?)['\"].*?\>View Product( Store)? Page/im",$desc,$matches);
 	if (!$ok) { touch($nostr); echo "Error finding store page for {$prodid}<br/>\n"; continue; }
 	
-	copy($matches['url'],$sname);
+	copy("https://daz3d.com".$matches['url'],$sname);
 	if (!file_exists($sname)) { touch($nostr); echo "Error copying store page for {$prodid}<br/>\n"; continue; }
 	if (filesize($sname) < $errstrlen) { echo "Error, incomplete store page for {$prodid}<br/>\n"; continue; }
 	
