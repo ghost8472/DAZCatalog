@@ -20,7 +20,7 @@ $autotag_bundle = "/This product is a bundle/i";
 $autotag_poses_inc = "/poses/i";
 $autotag_poses_not = "/and/i";
 $editors = [
-	 'DAZ_Studio'=>"/DAZ Studio/"
+	 'DAZ_Studio'=>"/(DAZ Studio|Install Manager|Daz Connect)/"
 	,'DSON_Poser'=>"/DSON Importer for Poser/"
 	,'Poser'=>"/Poser/"
 	,'Bryce'=>"/Bryce/"
@@ -329,7 +329,7 @@ if (empty($total) || $showloader || $makechange) {
 		if (!isset($obj['title'])) { $obj['title'] = ""; }
 		if ($obj['title'] == "" && $obj['gotdesc']) {
 			$desc_html = SafeFile("prods/{$prodid}/desc.html");
-			$ok = preg_match("/<h2>(?P<title>.*?)<\/h2>/i",$desc_html,$match);
+			$ok = preg_match("/<h2(.*?)>(?P<title>.*?)<\/h2>/i",$desc_html,$match);
 			if ($ok) {
 				$obj['title'] = $match['title'];
 			}
@@ -445,7 +445,6 @@ if (empty($total) || $showloader || $makechange) {
 	$remaining_json = json_encode($remaining_max);
 	if ($prodcount != count($total)) { $allowautorefresh = true; }
 } //need to build cache, or update it
-
 
 if (!empty($tag_override)) {
 	foreach($tag_override as $prodid=>$otags) {
@@ -591,6 +590,11 @@ function searchproc($words,$indexOrFilename) {
 				if ($ok) {
 					if ($match['count'] == 0) { continue; }
 					$keys[$match['prod']] = intval($match['count']);
+					$hits[$match['prod']] += 10;
+					
+					if (strpos(strtolower($total[$match['prod']]['title']),strtolower($word)) !== false) {
+						$hits[$match['prod']] += 20;
+					}
 				}
 			}
 		}
