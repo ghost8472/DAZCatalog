@@ -34,6 +34,7 @@ $installmethods = [
 $NONEELEM = "[None]";
 
 $cachetimeallow = 15;
+$recachemaxtime = 600;
 $webtimeallow_img = 5;
 $webtimeallow_store = 5;
 
@@ -197,6 +198,12 @@ if (isset($_REQUEST['nukecache'])) {
 	file_put_contents("cache.php",""); //so that permissions can survive the nuke
 	//$makechange = true;
 	//$quickrefresh = true;
+	$recachealltags = true;
+}
+if (isset($_REQUEST['alltags'])) {
+	$recachealltags = true;
+	$cachetimeallow = $recachemaxtime;
+	set_time_limit($recachemaxtime);
 }
 
 function SanitizeBigText($txt) {
@@ -307,7 +314,7 @@ if (empty($total) || $showloader || $makechange) {
 		$obj['procstore'] = ($obj['gotstore'] || $obj['errstore']);
 		if (!$obj['procstore']) { $storeremaining[] = $prodid; }
 		
-		if (!isset($obj['tag_mtime']) || $recachetag == $prodid || isset($tag_override[$prodid])) {
+		if (!isset($obj['tag_mtime']) || $recachetag == $prodid || isset($tag_override[$prodid]) || $recachealltags) {
 			$fname = "prods/{$prodid}/tags.txt";
 			$obj['gottags'] = (file_exists($fname) && filesize($fname) > 0);
 			if ($obj['gottags']) {
@@ -925,8 +932,12 @@ running.... <script>setTimeout(function() {
 
 
 
+<form method='POST'>
+<input type='hidden' name='alltags' value='1' />
+<input type='submit' value='Recache All Tags' style='background:#ffcccc;' />
+</form>
 
-
+<br/>
 
 <form method='POST'>
 <input type='hidden' name='nukecache' value='1' />
