@@ -262,6 +262,11 @@ if (empty($total) || $showloader || $makechange) {
 		$obj['procdesc'] = ($obj['gotdesc']);
 		if (!$obj['procdesc']) { $remaining[] = $prodid; }
 		
+		if (!isset($obj['loaddate'])) { $obj['loaddate'] = null; }
+		if ($obj['loaddate'] === null && $obj['gotdesc']) {
+			$obj['loaddate'] = date('Y-m-d H:i:s',filemtime("prods/{$prodid}/desc.html"));
+		}
+		
 		if (!isset($obj['gotimg'])) { $obj['gotimg'] = false; $obj['errimg'] = false; }
 		if (!isset($obj['img_mtime'])) {
 			$fname = "prods/{$prodid}/preview.jpg";
@@ -534,7 +539,9 @@ function ExList($str) {
 }
 function cmp_search($a,$b) {
 	//sort highest rate to lowest
-	return $b['rate'] - $a['rate'];
+	if ($b['rate'] != $a['rate']) return $b['rate'] - $a['rate'];
+	if ($b['loaddate'] != $a['loaddate']) return strcmp($b['loaddate'],$a['loaddate']);
+	return $b['prodid'] - $a['prodid'];
 }
 
 $search_locations = ['tags','title','desc','store'];
@@ -625,7 +632,7 @@ if ($newsearch) {
 	$regex = "/{$search}/i";
 	$maxtags = count($tagindex);
 	foreach($total as $prodid=>$obj) {
-		$idobj = ['prodid'=>$prodid,'rate'=>0,'rel'=>''];
+		$idobj = ['prodid'=>$prodid,'loaddate'=>$obj['loaddate'],'rate'=>0,'rel'=>''];
 		
 		foreach($skippers['tags'] as $tag) {
 			if (isset($obj['tags'][$tag])) { continue 2; }
