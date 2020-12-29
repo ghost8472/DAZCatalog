@@ -5,9 +5,6 @@ DAZ 3D cataloging
 Copyright (c) 2018-2020 William Baker, Ether Tear LLC
 */
 
-/*
-for file in $(grep -rl "\\\\n" --include=desc.html prods/); do rm $file; done
-*/
 
 $errstrlen = 32;
 $resultsperpage = 50;
@@ -87,6 +84,8 @@ if (isset($_REQUEST['serve']) && isset($_REQUEST['prodid'])) {
 	$from[] = "/<\/script/"; $to[] = "</meta";
 	$from[] = "/href=['\"].*?\.css['\"]/"; $to[] = "";
 	$from[] = "/<img .*?daz-logo-main.*?>/"; $to[] = "";
+	$from[] = "/src=\"\//"; $to[] = "src=\"https://daz3d.com/";
+	$from[] = "/card-body\"/"; $to[] = "card-body\" style=\"display:block;\"";
 	if ($serve == 'desc') {
 		$from[] = $imgurl_regex; $to[] = "src='prods/{$prodid}/preview.jpg'";
 	}
