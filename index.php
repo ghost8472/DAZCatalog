@@ -2,7 +2,7 @@
 /*
 DAZ 3D cataloging
 
-Copyright (c) 2018-2020 William Baker, Ether Tear LLC
+Copyright (c) 2018-2022 William Baker
 */
 
 
@@ -34,6 +34,7 @@ $cachetimeallow = 15;
 $recachemaxtime = 600;
 $webtimeallow_img = 5;
 $webtimeallow_store = 5;
+$linux = false; //set to true to use "grep" instead of having PHP load all word.txt files
 
 if (file_exists('config.php')) { include('config.php'); } //allows easily overriding the above defaults (without affecting what is under git control)
 
@@ -86,6 +87,8 @@ if (isset($_REQUEST['serve']) && isset($_REQUEST['prodid'])) {
 	$from[] = "/<img .*?daz-logo-main.*?>/"; $to[] = "";
 	$from[] = "/src=\"\//"; $to[] = "src=\"https://daz3d.com/";
 	$from[] = "/card-body\"/"; $to[] = "card-body\" style=\"display:block;\"";
+	$from[] = "/id=\"split-layout-old\" style=\"display: none;\"/"; $to[] = "id=\"split-layout-old\"";
+	$from[] = "/id=\"split-layout-new\" style=\"display: none;\"/"; $to[] = "id=\"split-layout-new\"";
 	if ($serve == 'desc') {
 		$from[] = $imgurl_regex; $to[] = "src='prods/{$prodid}/preview.jpg'";
 	}
@@ -189,6 +192,7 @@ if (isset($_REQUEST['desc'])) {
 	$quickrefresh = true;
 }
 
+$recachealltags = false;
 if (isset($_REQUEST['nukecache'])) {
 	//unlink("cache.php");
 	exec('for file in $(grep -rl "\\\\\\\\n" --include=desc.html prods/); do rm $file; done');
@@ -567,13 +571,15 @@ $filters = [];
 $filters['editors'] = ReqSes('filters_editors',array_merge(array_keys($editors),[$NONEELEM]));
 $filters['installers'] = ReqSes('filters_installers',array_merge(array_keys($installmethods),[$NONEELEM]));
 
+$searchcache = [];
 function searchproc($words,$indexOrFilename) {
-	global $total;
+	global $total, $searchcache, $linux;
 	
 	$hits = [];
 	$firstindex = true;
 	$maxwords = count($words);
-	foreach($words as $i=>$word) {
+	$i = 0;
+	foreach($words as $word) {
 		$score = $maxwords-$i;
 		$action = "OR";
 		$mod = substr($word,0,1);
@@ -590,23 +596,49 @@ function searchproc($words,$indexOrFilename) {
 		if (is_array($indexOrFilename)) { //index
 			$keys = isset($indexOrFilename[$word])?$indexOrFilename[$word]:[];
 		} else { //filename
-			$cmd = "grep -iFrc --include={$indexOrFilename} ".escapeshellarg(" $word ")." prods/";
-			$searchhandle = popen($cmd,"r");
-			$filehits = "";
-			while (!feof($searchhandle)) { 
-				$filehits .= fgets($searchhandle, 4096); 
-			}
-			pclose($searchhandle);
-			
-			foreach(explode("\n",$filehits) as $file) {
-				$ok = preg_match("/prods\/(?P<prod>\d+)\/.*:(?P<count>\d+)/",$file,$match);
-				if ($ok) {
-					if ($match['count'] == 0) { continue; }
-					$keys[$match['prod']] = intval($match['count']);
-					$hits[$match['prod']] += 10;
-					
-					if (strpos(strtolower($total[$match['prod']]['title']),strtolower($word)) !== false) {
-						$hits[$match['prod']] += 20;
+			if ($linux) {  //use this if you trust grep & OS file caching better than using PHP below
+				$cmd = "grep -iFrc --include={$indexOrFilename} ".escapeshellarg(" $word ")." prods/";
+				$searchhandle = popen($cmd,"r");
+				$filehits = "";
+				while (!feof($searchhandle)) { 
+					$filehits .= fgets($searchhandle, 4096); 
+				}
+				pclose($searchhandle);
+				
+				foreach(explode("\n",$filehits) as $file) {
+					$ok = preg_match("/prods\/(?P<prod>\d+)\/.*:(?P<count>\d+)/",$file,$match);
+					if ($ok) {
+						if ($match['count'] == 0) { continue; }
+						$keys[$match['prod']] = intval($match['count']);
+						$hits[$match['prod']] += 10;
+						
+						if (strpos(strtolower($total[$match['prod']]['title']),strtolower($word)) !== false) {
+							$hits[$match['prod']] += 20;
+						}
+					}
+				}
+			} else {
+				if (!isset($searchcache[$indexOrFilename])) {
+					$searchcache[$indexOrFilename] = [];
+					$prods = scandir("prods");
+					foreach($prods as $prod) {
+						if (!is_numeric($prod)) { continue; }
+						$fname = "prods/{$prod}/{$indexOrFilename}";
+						if (file_exists($fname)) {
+							$searchcache[$indexOrFilename][$prod] = file_get_contents($fname);
+						}
+					}
+				}
+				foreach($searchcache[$indexOrFilename] as $prod=>$text) {
+					$ok = stripos($text,$word);
+					if ($ok !== false) {
+						$keys[$prod] = 1;
+						if (!isset($hits[$prod])) { $hits[$prod] = 0; }
+						$hits[$prod] += 10;
+						
+						if (stripos($total[$prod]['title'],$word) !== false) {
+							$hits[$prod] += 20;
+						}
 					}
 				}
 			}
@@ -624,6 +656,7 @@ function searchproc($words,$indexOrFilename) {
 		}
 		
 		$firstindex = false;
+		$i++;
 	}
 	return $hits;
 }
