@@ -1,8 +1,6 @@
 # DAZCatalog
 A way to store your personal DAZ3D library, for sharing online, or viewing offline.
 
-Copyright (c) 2018 William Baker, Ether Tear LLC
-
 ## Description
 
 This is for keeping a personal catalog of your DAZ 3D assets, to facilitate the following:
