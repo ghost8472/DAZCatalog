@@ -2,7 +2,7 @@
 /*
 DAZ 3D cataloging
 
-Copyright (c) 2018-2022 William Baker
+Copyright (c) 2018-2020 William Baker, Ether Tear LLC
 */
 
 
@@ -560,7 +560,7 @@ $search = ReqSes('search',"");  if (!$allow_fulltext) $search = "";
 $index_words = ExList(ReqSes('index_words',""));
 $index_tags  = ExList(ReqSes('index_tags' ,""));
 
-$bylowtags = ($search == "" && empty($index_words) && empty($index_tags));
+$bydateonly = ($search == "" && empty($index_words) && empty($index_tags));
 
 $searchin = ReqSes('searchin',$search_locations);
 
@@ -718,10 +718,10 @@ if ($newsearch) {
 			$idobj['rel'] = trim($idobj['rel']." ".$key);
 		}
 		
-		if ($bylowtags) {
+		if ($bydateonly) {
 			$tagcount[$prodid] = $obj['tagcount'];
-			$idobj['rate'] += $maxtags - $tagcount[$prodid];
-			$idobj['rel'] = trim($idobj['rel']." lowtags");
+			$idobj['rate'] += 1; //$idobj['rate'] += $maxtags - $tagcount[$prodid];
+			//$idobj['rel'] = trim($idobj['rel']." lowtags");
 		}
 		
 		if ($idobj['rate'] == 0) { continue; }
@@ -790,7 +790,27 @@ Go to <a href='https://www.daz3d.com/downloader/customer/files' target='_blank'>
 <form method='POST' style='border:1px solid green;'>
 <table><tr><td>
 <textarea name='instruct' style='width:400px;height:30px;'>JSON.stringify(daz.api.data['Catalog/owned'].owned)</textarea><br/>
-Then copy the results, and paste them here &rarr;
+Then copy the results, and paste them here &rarr;<br/>
+<textarea name='instructcompressed' style='width:400px;height:50px;'>
+const str = atob(daz.api.data['Catalog/owned'].owned);
+const numbuf = new Array(str.length);
+for (let i = 0; i < str.length; i++) numbuf[i] = str.charCodeAt(i)
+const owned = [];
+let i = 0;
+while (i <= numbuf.length) {
+	let own = 0; let len = 0;
+	while (true) {
+		const bufval = numbuf[i];
+		own |= (bufval & 127) << len * 7;
+		i++;
+		if (++len > 5) throw new Error("unpack error")
+		if ((bufval & 128) !== 128) break
+	}
+	if (i <= numbuf.length) owned.push(own)
+}
+JSON.stringify(owned);
+</textarea><br/>
+Use this second code if you find your catalog is compressed.
 </td><td>
 <textarea name='owned' style='width:250px;height:50px;'></textarea><br/>
 <input type='submit' value='Update' />
@@ -1013,7 +1033,7 @@ running.... <script>setTimeout(function() {
 <?php
 $page = (isset($_REQUEST['page'])?intval($_REQUEST['page']):1);
 
-$pagehtml = "<center><span style='display:inline-block;white-space:nowrap;border:1px solid black;padding:8px;'>Page: ";
+$pagehtml = "<span style='display:inline-block;white-space:nowrap;border:1px solid black;padding:8px;'>Page: ";
 $pquery = $_GET;
 for($p = 1; $p <= ceil(count($searchids)/$resultsperpage); $p++) {
 	if ($p != $page) {
@@ -1029,13 +1049,14 @@ for($p = 1; $p <= ceil(count($searchids)/$resultsperpage); $p++) {
 		$pagehtml .= "</span>";
 	}
 	$pagehtml .= " ";
+	if ($p % 30 == 0) { $pagehtml .= "<br/>"; }
 }
-$pagehtml .= "</span></center>";
+$pagehtml .= "</span>";
 
 ?>
 
-<?php if ($bylowtags) { ?>
-<center style='border:1px solid green;padding:5px;white-space:nowrap;'>No search query, so organizing by least tagged</center>
+<?php if ($bydateonly) { ?>
+<center style='border:1px solid green;padding:5px;white-space:nowrap;'>No search query, so organizing by date only</center>
 <?php } ?>
 
 <style>
@@ -1136,11 +1157,15 @@ for($i = $resultsperpage*($page-1); $i < min($resultsperpage*$page,count($search
 	$stats = $searchids[$i];
 	$prodid = $stats['prodid'];
 	$usedids[] = $prodid;
-	$obj = $total[$prodid];  ?>
+	$obj = $total[$prodid];  
+	$tags_raw = trim(SafeFile("prods/{$prodid}/tags.txt"));
+	$tags_implode = implode(" ",$obj['tags']);
+	$tag_error = ($tags_raw == $tags_implode ? "" : "background:red;");
+?>
 <tr onclick="zpop(<?=$prodid?>);return false;">
 <td align='center' valign='middle' width='70' style='padding:0px;'><a href="<?=$prodid?>" onclick='zpop(<?=$prodid?>);return false;'><img src='<?=SafeHTML($obj['img'])?>' width='70' height='91' border='0' /></a></td>
 <td width="10%"><?=SafeHTML($obj['title'])?></td>
-<td width="10%" id='tags_<?=$prodid?>'><?=SafeHTML(implode(" ",$obj['tags']))?></td>
+<td width="10%" id='tags_<?=$prodid?>' style='<?=$tag_error?>'><?=SafeHTML($tags_raw)?></td>
 <td width="70%"></td>
 <td width="5%" style='background:<?=(isset($obj['editors']['DAZ_Studio'])?'#eeffee':"#ffcccc")?>;'><?=implode(" ",(isset($obj['editors'])?$obj['editors']:[]))?></td>
 <td width="5%" style='background:<?=(isset($obj['methods']['DAZ_Connect'])?'#eeffee':(isset($obj['methods']['Install_Manager'])?'#ffff66':'#ffcccc'))?>;'><?=SafeHTML(implode(" ",isset($obj['methods'])?$obj['methods']:[]))?>
