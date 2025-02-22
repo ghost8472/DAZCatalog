@@ -8,7 +8,7 @@ Copyright (c) 2018-2020 William Baker, Ether Tear LLC
 
 $errstrlen = 32;
 $resultsperpage = 50;
-$skip_tags = ['bundle','tex','poses','script','fits'];
+$skip_tags = ['bundle','tex','poses','script','fits','hidden'];
 
 $allow_fulltext = false;  //too many items in your inventory? turn off full text searching
 ini_set('memory_limit','2G');  //likely won't work on a cloud or leased server
