@@ -192,7 +192,8 @@ if (isset($_REQUEST['desc'])) {
 	}
 	foreach($descobj as $prodid_padded=>$desc) {
 		$prodid = substr($prodid_padded,1);
-		file_put_contents("prods/{$prodid}/desc.html",$desc);
+		$tprod = 't'.floor($prodid/1000);
+		file_put_contents("prods/{$tprod}/{$prodid}/desc.html",$desc);
 	}
 	$makechange = true;
 	$quickrefresh = true;
@@ -294,7 +295,7 @@ if (empty($total) || $showloader || $makechange) {
 		
 		if (!isset($obj['loaddate'])) { $obj['loaddate'] = null; }
 		if ($obj['loaddate'] === null && $obj['gotdesc']) {
-			$obj['loaddate'] = date('Y-m-d H:i:s',filemtime("prods/{$prodid}/desc.html"));
+			$obj['loaddate'] = date('Y-m-d H:i:s',filemtime("prods/{$tprod}/{$prodid}/desc.html"));
 		}
 		
 		if (!isset($obj['gotimg'])) { $obj['gotimg'] = false; $obj['errimg'] = false; }
