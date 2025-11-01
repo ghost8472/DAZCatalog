@@ -2,7 +2,7 @@
 /*
 DAZ 3D cataloging
 
-Copyright (c) 2018-2020 William Baker, Ether Tear LLC
+Copyright (c) 2018-2025 William Baker
 */
 
 
@@ -30,7 +30,7 @@ $installmethods = [
 ];
 $NONEELEM = "[None]";
 
-$cachetimeallow = 15;
+$cachetimeallow = 25;
 $recachemaxtime = 600;
 $webtimeallow_img = 5;
 $webtimeallow_store = 5;
@@ -68,7 +68,8 @@ if (isset($_REQUEST['serve']) && isset($_REQUEST['prodid'])) {
 	}
 	$serve = $_REQUEST['serve'];
 	$prodid = intval($_REQUEST['prodid']);
-	$fname = "prods/{$prodid}/{$serve}.html";
+	$tprod = 't'.floor($prodid/1000);
+	$fname = "prods/{$tprod}/{$prodid}/{$serve}.html";
 	if (file_exists($fname)) {
 		$html = SafeFile($fname);
 	} else {
@@ -100,7 +101,8 @@ if (isset($_REQUEST['serve']) && isset($_REQUEST['prodid'])) {
 
 if (isset($_REQUEST['servetags'])) {
 	$prodid = intval($_REQUEST['servetags']);
-	$fname = "prods/{$prodid}/tags.txt";
+	$tprod = 't'.floor($prodid/1000);
+	$fname = "prods/{$tprod}/{$prodid}/tags.txt";
 	$fieldname = "tags".rand(1000000,9999999);
 	$tagsafe = SafeHTML( file_exists($fname)?SafeFile($fname):"" );
 ?><form method='GET' action='<?=basename(__FILE__)?>' >
@@ -127,7 +129,8 @@ if (file_exists("cache_tagsoverride.php")) { include("cache_tagsoverride.php"); 
 if (isset($_REQUEST['tagsfield']) && isset($_REQUEST['prodid'])) {
 	$_REQUEST['tags'] = $_REQUEST[$_REQUEST['tagsfield']];
 	$prodid = intval($_REQUEST['prodid']);
-	$fname = "prods/".intval($prodid)."/tags.txt";
+	$tprod = 't'.floor($prodid/1000);
+	$fname = "prods/{$tprod}/{$prodid}/tags.txt";
 	file_put_contents($fname,strtolower($_REQUEST['tags']));
 	
 	$recachetag = $prodid;
@@ -157,8 +160,11 @@ if (isset($_REQUEST['owned'])) {
 	$quickrefresh = true;
 }
 foreach($owned as $prodid) {
-	if (file_exists("prods/{$prodid}")) { continue; }
-	mkdir("prods/{$prodid}");
+	$prodid = intval($prodid);
+	$tprod = 't'.floor($prodid/1000);
+	if (!file_exists("prods/{$tprod}")) { mkdir("prods/{$tprod}"); }
+	if (file_exists("prods/{$tprod}/{$prodid}")) { continue; }
+	mkdir("prods/{$tprod}/{$prodid}");
 	$makechange = true;
 }
 
@@ -195,9 +201,9 @@ if (isset($_REQUEST['desc'])) {
 $recachealltags = false;
 if (isset($_REQUEST['nukecache'])) {
 	//unlink("cache.php");
-	exec('for file in $(grep -rl "\\\\\\\\n" --include=desc.html prods/); do rm $file; done');
-	exec('rm prods/*/noimg');
-	exec('rm prods/*/nostore');
+	exec('for file in $(grep -rl "\\\\\\\\n" --include=desc.html prods/*/); do rm $file; done');
+	exec('rm prods/*/*/noimg');
+	exec('rm prods/*/*/nostore');
 	file_put_contents("cache.php",""); //so that permissions can survive the nuke
 	//$makechange = true;
 	//$quickrefresh = true;
@@ -241,8 +247,22 @@ if (empty($total) || $showloader || $makechange) {
 	$methodremaining = [];
 	$maxtime = time()+$cachetimeallow;
 	$prodcount = count(scandir("prods"))-2;
-	foreach(scandir("prods") as $prodid) {
-		if (time() > $maxtime) { print "Caching timeout at prod id {$prodid}, total ".count($total)." expecting ".$prodcount; $quickrefresh = false; break; }
+	foreach(scandir("prods") as $tprod) {
+	  if (substr($tprod,0,1) != 't') {
+		$prodid = intval($tprod);
+		$tprod = 't'.floor($prodid/1000);
+		if ($prodid == 0) continue;
+	    if (!file_exists("prods/{$tprod}")) { mkdir("prods/{$tprod}");}
+		if (!file_exists("prods/{$tprod}/{$prodid}")) {
+			rename("prods/{$prodid}","prods/{$tprod}/{$prodid}");
+		} else {
+		}
+		continue;
+	  }
+	  foreach(scandir("prods/{$tprod}") as $prodid) {
+		$prodid = intval($prodid);
+		if ($prodid == 0) continue;
+		if (time() > $maxtime) { print "Caching timeout at prod id {$tprod}/{$prodid}, total ".count($total)." expecting ".$prodcount; $quickrefresh = false; break; }
 		if ($recachetag && $recachetag != $prodid) { continue; }
 		if (substr($prodid,0,1) == ".") { continue; }
 		$obj = (isset($total[$prodid])?$total[$prodid]:[]);
@@ -254,7 +274,7 @@ if (empty($total) || $showloader || $makechange) {
 		
 		if (!isset($obj['gotdesc'])) { $obj['gotdesc'] = false; }
 		if (!isset($obj['desc_mtime'])) {
-			$fname = "prods/{$prodid}/desc.html";
+			$fname = "prods/{$tprod}/{$prodid}/desc.html";
 			$obj['gotdesc'] = (file_exists($fname) && filesize($fname) >= $errstrlen);
 			if ($obj['gotdesc']) {
 				$desc_html = SafeFile($fname);
@@ -279,9 +299,9 @@ if (empty($total) || $showloader || $makechange) {
 		
 		if (!isset($obj['gotimg'])) { $obj['gotimg'] = false; $obj['errimg'] = false; }
 		if (!isset($obj['img_mtime'])) {
-			$fname = "prods/{$prodid}/preview.jpg";
+			$fname = "prods/{$tprod}/{$prodid}/preview.jpg";
 			$obj['gotimg'] = (file_exists($fname) && filesize($fname) >= $errstrlen);
-			$ename = "prods/{$prodid}/noimg";
+			$ename = "prods/{$tprod}/{$prodid}/noimg";
 			$obj['errimg'] = (file_exists($ename));
 			if ($obj['errimg']) { $obj['gotimg'] = false; }
 			$obj['img'] = ($obj['gotimg']?$fname:"notfound.png");
@@ -297,9 +317,9 @@ if (empty($total) || $showloader || $makechange) {
 		
 		if (!isset($obj['gotstore'])) { $obj['gotstore'] = false; $obj['errstore'] = false; }
 		if (!isset($obj['store_mtime'])) {
-			$fname = "prods/{$prodid}/store.html";
+			$fname = "prods/{$tprod}/{$prodid}/store.html";
 			$obj['gotstore'] = (file_exists($fname) && filesize($fname) >= $errstrlen);
-			$ename = "prods/{$prodid}/nostore";
+			$ename = "prods/{$tprod}/{$prodid}/nostore";
 			$obj['errstore'] = (file_exists($ename));
 			if ($obj['errstore']) { $obj['gotstore'] = false; }
 			if ($obj['gotstore']) {
@@ -318,7 +338,7 @@ if (empty($total) || $showloader || $makechange) {
 		if (!$obj['procstore']) { $storeremaining[] = $prodid; }
 		
 		if (!isset($obj['tag_mtime']) || $recachetag == $prodid || isset($tag_override[$prodid]) || $recachealltags) {
-			$fname = "prods/{$prodid}/tags.txt";
+			$fname = "prods/{$tprod}/{$prodid}/tags.txt";
 			$obj['gottags'] = (file_exists($fname) && filesize($fname) > 0);
 			if ($obj['gottags']) {
 				$tags_raw = trim(SafeFile($fname));
@@ -343,7 +363,7 @@ if (empty($total) || $showloader || $makechange) {
 		
 		if (!isset($obj['title'])) { $obj['title'] = ""; }
 		if ($obj['title'] == "" && $obj['gotdesc']) {
-			$desc_html = SafeFile("prods/{$prodid}/desc.html");
+			$desc_html = SafeFile("prods/{$tprod}/{$prodid}/desc.html");
 			$ok = preg_match("/<h2(.*?)>(?P<title>.*?)<\/h2>/i",$desc_html,$match);
 			if ($ok) {
 				$obj['title'] = $match['title'];
@@ -351,7 +371,7 @@ if (empty($total) || $showloader || $makechange) {
 		}
 		
 		if (!isset($obj['imgurl']) && $obj['gotdesc']) {
-			$desc_html = SafeFile("prods/{$prodid}/desc.html");
+			$desc_html = SafeFile("prods/{$tprod}/{$prodid}/desc.html");
 			$ok = preg_match($imgurl_regex,$desc_html,$match);
 			$obj['imgurl'] = ($ok?$match['url']:"");
 		}
@@ -361,7 +381,7 @@ if (empty($total) || $showloader || $makechange) {
 				if (isset($obj['tags'][$atag])) { continue; } //already known/saved
 				$obj['tags'][$atag] = $atag;
 				$obj['tagcount'] = count($obj['tags']);
-				file_put_contents("prods/{$prodid}/tags.txt"," ".implode(" ",$obj['tags'])." ");
+				file_put_contents("prods/{$tprod}/{$prodid}/tags.txt"," ".implode(" ",$obj['tags'])." ");
 				error_log("INFO: autotags updated {$prodid}: {$atag}");
 				if (!isset($tagindex[$atag])) { $tagindex[$atag] = []; }
 				$tagindex[$atag][$prodid] = $prodid;
@@ -369,7 +389,7 @@ if (empty($total) || $showloader || $makechange) {
 		}
 
 		if (!isset($obj['methods']) && $obj['procdesc']) {
-			$desc_html = SafeFile("prods/{$prodid}/desc.html");
+			$desc_html = SafeFile("prods/{$tprod}/{$prodid}/desc.html");
 			//  Flying Steamer 8596 does not have DAZ Connect, nor do "Bryce" items
 			$obj['methods'] = [];
 			foreach($installmethods as $key=>$regex) {
@@ -381,8 +401,8 @@ if (empty($total) || $showloader || $makechange) {
 		
 		if (!isset($obj['editors']) && $obj['procdesc'] && $obj['procstore']) {
 			$obj['editors'] = [];
-			$desc_html = SafeFile("prods/{$prodid}/desc.html");
-			$store_html = SafeFile("prods/{$prodid}/store.html");
+			$desc_html = SafeFile("prods/{$tprod}/{$prodid}/desc.html");
+			$store_html = SafeFile("prods/{$tprod}/{$prodid}/store.html");
 			$desc_fix = preg_replace("/DAZ Studio/","",$desc_html); //most of the desc will contain "Daz Studio" when mentioning Daz Connect
 			$store_fix = $store_html;
 			$sub = $desc_fix.$store_fix;
@@ -396,7 +416,7 @@ if (empty($total) || $showloader || $makechange) {
 		}
 		
 		if (!isset($obj['pdate']) && $obj['procdesc']) {
-			$desc_html = SafeFile("prods/{$prodid}/desc.html");
+			$desc_html = SafeFile("prods/{$tprod}/{$prodid}/desc.html");
 			$ok = preg_match("/Order:.*?&ndash; (\d+.*?\d\d\d\d)/i",$desc_html,$match);
 			if ($ok) {
 				$obj['pdate'] = date("Y-m-d",strtotime($match[1]));
@@ -405,8 +425,8 @@ if (empty($total) || $showloader || $makechange) {
 		
 		if (!isset($obj['wordindex_mtime']) && $obj['procdesc'] && $obj['procstore']) {
 			$windex = [];
-			$desc_html = SafeFile("prods/{$prodid}/desc.html");
-			$store_html = SafeFile("prods/{$prodid}/store.html");
+			$desc_html = SafeFile("prods/{$tprod}/{$prodid}/desc.html");
+			$store_html = SafeFile("prods/{$tprod}/{$prodid}/store.html");
 			$allwords = SanitizeBigText($desc_html).' '.SanitizeBigText($store_html);
 			$allwords = strtolower($allwords);
 			$allwords = preg_replace("/[^a-z0-9 ]/"," ",$allwords);
@@ -439,10 +459,11 @@ if (empty($total) || $showloader || $makechange) {
 			/**/
 			
 			//greppable file
-			file_put_contents("prods/{$prodid}/words.txt"," ".implode(" ",array_keys($windex))." ");
+			file_put_contents("prods/{$tprod}/{$prodid}/words.txt"," ".implode(" ",array_keys($windex))." ");
 		}
 		
 		$total[$prodid] = $obj;
+	  }
 	}
 	
 	$tag_override = [];
@@ -620,13 +641,16 @@ function searchproc($words,$indexOrFilename) {
 			} else {
 				if (!isset($searchcache[$indexOrFilename])) {
 					$searchcache[$indexOrFilename] = [];
-					$prods = scandir("prods");
-					foreach($prods as $prod) {
-						if (!is_numeric($prod)) { continue; }
-						$fname = "prods/{$prod}/{$indexOrFilename}";
+					foreach(scandir("prods/") as $tprod) {
+					  if (substr($tprod,0,1) != 't') continue;
+					  foreach(scandir("prods/{$tprod}/") as $prodid) {
+						if (!is_numeric($prodid)) { continue; }
+						$prodid = intval($prodid);
+						$fname = "prods/{$tprod}/{$prodid}/{$indexOrFilename}";
 						if (file_exists($fname)) {
 							$searchcache[$indexOrFilename][$prod] = file_get_contents($fname);
 						}
+					  }
 					}
 				}
 				foreach($searchcache[$indexOrFilename] as $prod=>$text) {
@@ -894,13 +918,16 @@ echo "Images Remaining to be cached: ".count($imgremain)."<br/>\n";
 $imgdown = 0;
 $timeout = time()+$webtimeallow_img;
 foreach($imgremain as $prodid) {
+	$prodid = intval($prodid);
+	$tprod = 't'.floor($prodid/1000);
+	
 	if (time() >= $timeout) { break; }
 	if (!isset($total[$prodid])) { continue; }
 	if (!isset($total[$prodid]['procdesc'])) { continue; }
 	
-	$fname = "prods/{$prodid}/desc.html";
-	$iname = "prods/{$prodid}/preview.jpg";
-	$noimg = "prods/{$prodid}/noimg";
+	$fname = "prods/{$tprod}/{$prodid}/desc.html";
+	$iname = "prods/{$tprod}/{$prodid}/preview.jpg";
+	$noimg = "prods/{$tprod}/{$prodid}/noimg";
 	if (file_exists($iname) && filesize($iname) >= $errstrlen) { continue; }
 	if (!file_exists($fname)) { continue; }
 	if (file_exists($noimg)) { continue; }
@@ -922,11 +949,14 @@ echo "Store pages remaining to be cached: ".count($storeremaining)."<br/>\n";
 $storedown = 0;
 $timeout = time()+$webtimeallow_store;
 foreach($storeremaining as $prodid) {
+	$prodid = intval($prodid);
+	$tprod = 't'.floor($prodid/1000);	
+	
 	if (time() >= $timeout) { break; }
 	
-	$fname = "prods/{$prodid}/desc.html";
-	$sname = "prods/{$prodid}/store.html";
-	$nostr = "prods/{$prodid}/nostore";
+	$fname = "prods/{$tprod}/{$prodid}/desc.html";
+	$sname = "prods/{$tprod}/{$prodid}/store.html";
+	$nostr = "prods/{$tprod}/{$prodid}/nostore";
 	if (file_exists($sname) && filesize($sname) >= $errstrlen) { continue; }
 	if (!file_exists($fname)) { continue; }
 	if (file_exists($nostr)) { continue; }
@@ -1155,10 +1185,11 @@ Installers:
 $usedids = [];
 for($i = $resultsperpage*($page-1); $i < min($resultsperpage*$page,count($searchids)); $i++) {
 	$stats = $searchids[$i];
-	$prodid = $stats['prodid'];
+	$prodid = intval($stats['prodid']);
+	$tprod = 't'.floor($prodid/1000);
 	$usedids[] = $prodid;
 	$obj = $total[$prodid];  
-	$tags_raw = trim(SafeFile("prods/{$prodid}/tags.txt"));
+	$tags_raw = trim(SafeFile("prods/{$tprod}/{$prodid}/tags.txt"));
 	$tags_implode = implode(" ",$obj['tags']);
 	$tag_error = ($tags_raw == $tags_implode ? "" : "background:red;");
 ?>
