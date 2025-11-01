@@ -91,7 +91,7 @@ if (isset($_REQUEST['serve']) && isset($_REQUEST['prodid'])) {
 	$from[] = "/id=\"split-layout-old\" style=\"display: none;\"/"; $to[] = "id=\"split-layout-old\"";
 	$from[] = "/id=\"split-layout-new\" style=\"display: none;\"/"; $to[] = "id=\"split-layout-new\"";
 	if ($serve == 'desc') {
-		$from[] = $imgurl_regex; $to[] = "src='prods/{$prodid}/preview.jpg'";
+		$from[] = $imgurl_regex; $to[] = "src='prods/{$tprod}/{$prodid}/preview.jpg'";
 	}
 	$html = preg_replace($from,$to,$html);
 
