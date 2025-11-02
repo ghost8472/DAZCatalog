@@ -247,7 +247,7 @@ if (empty($total) || $showloader || $makechange) {
 	$storeremaining = []; $storeerrors = [];
 	$methodremaining = [];
 	$maxtime = time()+$cachetimeallow;
-	$prodcount = count(scandir("prods"))-2;
+	$prodcount = 0;//count(scandir("prods"))-2;
 	foreach(scandir("prods") as $tprod) {
 	  if (substr($tprod,0,1) != 't') {
 		$prodid = intval($tprod);
@@ -260,6 +260,10 @@ if (empty($total) || $showloader || $makechange) {
 		}
 		continue;
 	  }
+	  $prodcount += count(scandir("prods/{$tprod}"))-2;
+	}
+	foreach(scandir("prods") as $tprod) {
+	  if (substr($tprod,0,1) != 't') continue;
 	  foreach(scandir("prods/{$tprod}") as $prodid) {
 		$prodid = intval($prodid);
 		if ($prodid == 0) continue;
