@@ -263,7 +263,7 @@ if (empty($total) || $showloader || $makechange) {
 	  foreach(scandir("prods/{$tprod}") as $prodid) {
 		$prodid = intval($prodid);
 		if ($prodid == 0) continue;
-		if (time() > $maxtime) { print "Caching timeout at prod id {$tprod}/{$prodid}, total ".count($total)." expecting ".$prodcount; $quickrefresh = false; break; }
+		if (time() > $maxtime) { print "Caching timeout at prod id {$tprod}/{$prodid}, total ".count($total)." expecting ".$prodcount; $quickrefresh = false; break 2; }
 		if ($recachetag && $recachetag != $prodid) { continue; }
 		if (substr($prodid,0,1) == ".") { continue; }
 		$obj = (isset($total[$prodid])?$total[$prodid]:[]);
