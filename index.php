@@ -818,28 +818,29 @@ Go to <a href='https://www.daz3d.com/downloader/customer/files' target='_blank'>
 
 <form method='POST' style='border:1px solid green;'>
 <table><tr><td>
-<textarea name='instruct' style='width:400px;height:30px;'>JSON.stringify(daz.api.data['Catalog/owned'].owned)</textarea><br/>
-Then copy the results, and paste them here &rarr;<br/>
-<textarea name='instructcompressed' style='width:400px;height:50px;'>
-const str = atob(daz.api.data['Catalog/owned'].owned);
-const numbuf = new Array(str.length);
-for (let i = 0; i < str.length; i++) numbuf[i] = str.charCodeAt(i)
-const owned = [];
-let i = 0;
-while (i <= numbuf.length) {
-	let own = 0; let len = 0;
-	while (true) {
-		const bufval = numbuf[i];
-		own |= (bufval & 127) << len * 7;
-		i++;
-		if (++len > 5) throw new Error("unpack error")
-		if ((bufval & 128) !== 128) break
+<textarea name='instruct' style='width:400px;height:60px;'>if (typeof(daz.api.data['Catalog/owned'].owned) == 'string') {
+	const str = atob(daz.api.data['Catalog/owned'].owned);
+	const numbuf = new Array(str.length);
+	for (let i = 0; i < str.length; i++) numbuf[i] = str.charCodeAt(i)
+	const owned = [];
+	let i = 0;
+	while (i <= numbuf.length) {
+		let own = 0; let len = 0;
+		while (true) {
+			const bufval = numbuf[i];
+			own |= (bufval & 127) << len * 7;
+			i++;
+			if (++len > 5) throw new Error("unpack error")
+			if ((bufval & 128) !== 128) break
+		}
+		if (i <= numbuf.length) owned.push(own)
 	}
-	if (i <= numbuf.length) owned.push(own)
+	JSON.stringify(owned);
+} else {
+	JSON.stringify(daz.api.data['Catalog/owned'].owned);
 }
-JSON.stringify(owned);
 </textarea><br/>
-Use this second code if you find your catalog is compressed.
+Then copy the results, and paste them here &rarr;<br/>
 </td><td>
 <textarea name='owned' style='width:250px;height:50px;'></textarea><br/>
 <input type='submit' value='Update' />
