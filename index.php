@@ -10,6 +10,8 @@ $errstrlen = 32;
 $resultsperpage = 50;
 $skip_tags = ['bundle','tex','poses','script','fits','hidden'];
 
+$maxatonce = 40; //max copy/paste
+
 $allow_fulltext = false;  //too many items in your inventory? turn off full text searching
 ini_set('memory_limit','2G');  //likely won't work on a cloud or leased server
 
@@ -30,10 +32,12 @@ $installmethods = [
 ];
 $NONEELEM = "[None]";
 
-$cachetimeallow = 25;
+$cachetimeallow = 20;
 $recachemaxtime = 600;
+$maxcachetimeperfolder = 100;
 $webtimeallow_img = 5;
 $webtimeallow_store = 5;
+$searchmaxtimeperelem = 120;
 $linux = false; //set to true to use "grep" instead of having PHP load all word.txt files
 
 if (file_exists('config.php')) { include('config.php'); } //allows easily overriding the above defaults (without affecting what is under git control)
@@ -45,8 +49,16 @@ function SafeHTML($str) {
 }
 function SafeFile($filepath) {
 	if (!file_exists($filepath)) { return ""; }
-	return file_get_contents($filepath);
+	try {
+		return file_get_contents($filepath);
+	} catch (Exception $e) {
+		return "";
+	}
 }
+
+set_error_handler(function ($severity, $message, $file, $line) {
+    throw new ErrorException($message, 0, $severity, $file, $line);
+}, E_WARNING);
 
 $quickrefresh = false;
 $allowautorefresh = false;
@@ -147,8 +159,10 @@ if (isset($_REQUEST['tagsfield']) && isset($_REQUEST['prodid'])) {
 	$quickrefresh = ['servetags'=>$prodid,'tagup'=>true];
 }
 
+$firstshowloader = (isset($_SESSION['firstshowloader'])?$_SESSION['firstshowloader']:0); $_SESSION['firstshowloader'] = 0;
 if (isset($_REQUEST['showloader'])) {
 	$_SESSION['showloader'] = $_REQUEST['showloader'];
+	$_SESSION['firstshowloader'] = $_REQUEST['showloader'];
 	$quickrefresh = true;
 }
 $showloader = (isset($_SESSION['showloader'])?$_SESSION['showloader']:0);
@@ -165,7 +179,7 @@ foreach($owned as $prodid) {
 	if (!file_exists("prods/{$tprod}")) { mkdir("prods/{$tprod}"); }
 	if (file_exists("prods/{$tprod}/{$prodid}")) { continue; }
 	mkdir("prods/{$tprod}/{$prodid}");
-	$makechange = true;
+	// $makechange = true;
 }
 
 if (isset($_REQUEST['desc'])) {
@@ -240,12 +254,11 @@ function SanitizeBigText($txt) {
 
 $total = []; $tagindex = []; $wordindex = [];
 if (file_exists("cache.php")) { include("cache.php"); }
-if (empty($total) || $showloader || $makechange) {
-	$maxatonce = 40;
-	$remaining = [];
-	$imgremain = []; $imgerrors = [];
-	$storeremaining = []; $storeerrors = [];
-	$methodremaining = [];
+$remaining = [];
+$imgremain = []; $imgerrors = [];
+$storeremaining = []; $storeerrors = [];
+$methodremaining = [];
+if (empty($total) || ($showloader && !$quickrefresh && !$firstshowloader) || $makechange) {
 	$maxtime = time()+$cachetimeallow;
 	$prodcount = 0;//count(scandir("prods"))-2;
 	foreach(scandir("prods") as $tprod) {
@@ -264,10 +277,16 @@ if (empty($total) || $showloader || $makechange) {
 	}
 	foreach(scandir("prods") as $tprod) {
 	  if (substr($tprod,0,1) != 't') continue;
+	  
+	  set_time_limit($maxcachetimeperfolder);
 	  foreach(scandir("prods/{$tprod}") as $prodid) {
 		$prodid = intval($prodid);
 		if ($prodid == 0) continue;
-		if (time() > $maxtime) { print "Caching timeout at prod id {$tprod}/{$prodid}, total ".count($total)." expecting ".$prodcount; $quickrefresh = false; break 2; }
+		if (time() > $maxtime) { 
+			if ($prodcount != count($total)) print "Caching timeout at prod id {$prodid}, total ".count($total)." expecting ".$prodcount;
+			$quickrefresh = false;
+			break 2;
+		}
 		if ($recachetag && $recachetag != $prodid) { continue; }
 		if (substr($prodid,0,1) == ".") { continue; }
 		$obj = (isset($total[$prodid])?$total[$prodid]:[]);
@@ -585,8 +604,9 @@ $search_locations = ['tags','title','desc','store'];
 $search = ReqSes('search',"");  if (!$allow_fulltext) $search = "";
 $index_words = ExList(ReqSes('index_words',""));
 $index_tags  = ExList(ReqSes('index_tags' ,""));
+$tags_none   =        ReqSes('tags_none',"");
 
-$bydateonly = ($search == "" && empty($index_words) && empty($index_tags));
+$bydateonly = ($search == "" && empty($index_words) && empty($index_tags) && !$tags_none);
 
 $searchin = ReqSes('searchin',$search_locations);
 
@@ -598,14 +618,65 @@ $filters['editors'] = ReqSes('filters_editors',array_merge(array_keys($editors),
 $filters['installers'] = ReqSes('filters_installers',array_merge(array_keys($installmethods),[$NONEELEM]));
 
 $searchcache = [];
-function searchproc($words,$indexOrFilename) {
-	global $total, $searchcache, $linux;
-	
+function searchproc($words,$indexOrFilename,$includenone=false) {
+	global $total, $searchcache, $linux, $searchmaxtimeperelem, $maxcachetimeperfolder;
+
 	$hits = [];
 	$firstindex = true;
 	$maxwords = count($words);
+	
+	if (empty($words) && !$includenone) { return $hits; }
+
+	if (is_array($indexOrFilename)) {
+		if ($includenone) {
+			foreach(scandir("prods/") as $tprod) {
+			  set_time_limit($maxcachetimeperfolder);
+			  if (substr($tprod,0,1) != 't') continue;
+			  foreach(scandir("prods/{$tprod}/") as $prodid) {
+				if (!is_numeric($prodid)) { continue; }
+
+				$prodid = intval($prodid);
+				$allprods[$prodid] = 0;
+			  }
+			}
+
+			foreach($indexOrFilename as $word=>$keys) {
+				foreach($keys as $prodid=>$ignore) {
+					if (!isset($allprods[$prodid])) { continue; }
+
+					$allprods[$prodid]++;
+				}
+			}
+
+			foreach($allprods as $prodid=>$counter) {
+				if ($counter != 0) { continue; }
+
+				if (!isset($hits[$prodid])) { $hits[$prodid] = 0; }
+				$hits[$prodid] += 1;
+			}
+		}
+	} else {
+		if (!isset($searchcache[$indexOrFilename])) {
+			$searchcache[$indexOrFilename] = [];
+			foreach(scandir("prods/") as $tprod) {
+			  set_time_limit($maxcachetimeperfolder);
+			  if (substr($tprod,0,1) != 't') continue;
+			  foreach(scandir("prods/{$tprod}/") as $prodid) {
+				if (!is_numeric($prodid)) { continue; }
+				$prodid = intval($prodid);
+				$fname = "prods/{$tprod}/{$prodid}/{$indexOrFilename}";
+				if (file_exists($fname)) {
+					$searchcache[$indexOrFilename][$prodid] = file_get_contents($fname);
+				}
+			  }
+			}
+		}
+	}
+	
 	$i = 0;
 	foreach($words as $word) {
+		set_time_limit($searchmaxtimeperelem);
+		
 		$score = $maxwords-$i;
 		$action = "OR";
 		$mod = substr($word,0,1);
@@ -632,7 +703,7 @@ function searchproc($words,$indexOrFilename) {
 				pclose($searchhandle);
 				
 				foreach(explode("\n",$filehits) as $file) {
-					$ok = preg_match("/prods\/(?P<prod>\d+)\/.*:(?P<count>\d+)/",$file,$match);
+					$ok = preg_match("/prods\/t\d+/(?P<prod>\d+)\/.*:(?P<count>\d+)/",$file,$match);
 					if ($ok) {
 						if ($match['count'] == 0) { continue; }
 						$keys[$match['prod']] = intval($match['count']);
@@ -644,20 +715,6 @@ function searchproc($words,$indexOrFilename) {
 					}
 				}
 			} else {
-				if (!isset($searchcache[$indexOrFilename])) {
-					$searchcache[$indexOrFilename] = [];
-					foreach(scandir("prods/") as $tprod) {
-					  if (substr($tprod,0,1) != 't') continue;
-					  foreach(scandir("prods/{$tprod}/") as $prodid) {
-						if (!is_numeric($prodid)) { continue; }
-						$prodid = intval($prodid);
-						$fname = "prods/{$tprod}/{$prodid}/{$indexOrFilename}";
-						if (file_exists($fname)) {
-							$searchcache[$indexOrFilename][$prod] = file_get_contents($fname);
-						}
-					  }
-					}
-				}
 				foreach($searchcache[$indexOrFilename] as $prod=>$text) {
 					$ok = stripos($text,$word);
 					if ($ok !== false) {
@@ -687,15 +744,15 @@ function searchproc($words,$indexOrFilename) {
 		$firstindex = false;
 		$i++;
 	}
+	
 	return $hits;
 }
 
 
 $newsearch = (isset($_REQUEST['newsearch'])?$_REQUEST['newsearch']:(isset($_SESSION['searchids'])?0:1));
 if ($newsearch) {
-	
-	$wfinder = searchproc($index_words,'words.txt');
-	$tfinder = searchproc($index_tags,$tagindex);
+	$wfinder = searchproc($index_words,'words.txt',false);
+	$tfinder = searchproc($index_tags,$tagindex,$tags_none);
 	
 	$regex = "/{$search}/i";
 	$maxtags = count($tagindex);
@@ -762,6 +819,7 @@ if ($newsearch) {
 	$_SESSION['search'] = $search;
 	$_SESSION['index_words'] = implode(" ",$index_words);
 	$_SESSION['index_tags'] = implode(" ",$index_tags);
+	$_SESSION['tags_none'] = $tags_none;
 	$_SESSION['searchin'] = $searchin;
 	$_SESSION['skippers_tags'] = $skippers['tags'];
 	$_SESSION['filters_editors'] = $filters['editors'];
@@ -774,7 +832,7 @@ if ($newsearch) {
 
 
 
-if ($quickrefresh) {
+if (false && $quickrefresh) { //todo: remove "false"
 	$url = basename(__FILE__);
 	if (is_array($quickrefresh)) { $url .= "?".http_build_query($quickrefresh); }
 	header("Location: {$url}");
@@ -1154,6 +1212,7 @@ $pagehtml .= "</span>";
 
 <tr><td>
 <label>Index (tags): <input type='text' id='index_tags' name='index_tags' value='<?=SafeHTML(implode(" ",$index_tags))?>' /> <a class='listpop' onclick='listpop("tags");return false;'>Selector</a></label>
+<label>[None]: <input type='checkbox' id='tags_none' name='tags_none' value='1' <?=($tags_none?'checked':'')?>/></label>
 </td></tr>
 
 <tr><td>
